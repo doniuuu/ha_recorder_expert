@@ -46,10 +46,10 @@ Define rules for entire groups using:
 - **Domains**
 
 ### 👻 Ghost Entity Detection
-Automatically detects and cleans up:
+Detects and cleans up:
 
-- entities present in YAML
-- but **no longer existing in Home Assistant**
+- entities present in YAML but **no longer existing in Home Assistant**
+- entity globs present in configured lists
 
 ### 💾 Backup Engine
 Every save automatically creates a **backup** of your configuration.
