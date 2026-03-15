@@ -1,0 +1,19 @@
+name: "Recorder Expert"
+description: "Manage Recorder and Logbook filters"
+version: "1.0.0"
+slug: "recorder_expert"
+init: false
+arch:
+  - aarch64
+  - amd64
+  - armv7
+ingress: true
+ingress_port: 8501
+panel_icon: "mdi:database-cog"
+panel_title: "Recorder Expert"
+panel_admin: true
+hassio_api: true
+hassio_role: admin
+homeassistant_api: true
+map:
+  - config:rw
