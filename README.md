@@ -5,7 +5,8 @@
 Instead of editing complex configuration manually, you can manage entity **includes, excludes, and globs** through a fast and responsive **React interface**.
 
 ---
-
+[![Add repository to Home Assistant](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?repository_url=https://github.com/doniuuu/ha_recorder_expert)
+![Main UI](docs/overview.png)
 
 # 📖 User Guide
 
@@ -13,6 +14,8 @@ Instead of editing complex configuration manually, you can manage entity **inclu
 
 ### 🔄 Dual Mode Management
 Seamlessly switch between managing **Recorder** and **Logbook** configurations.
+
+![Dualmode](docs/dualmode.gif)
 
 ### 🆕 New Entity Discovery
 Recorder Expert automatically tracks entities you have already reviewed.
@@ -28,6 +31,8 @@ Filter entities by:
 - **State**
 - **Unit of Measurement (UoM)**
 - **Inclusion / Exclusion status**
+
+![Filtering](docs/filtering.gif)
 
 ### 🧩 Group Rules
 Define rules for entire groups using:
