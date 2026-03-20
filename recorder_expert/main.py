@@ -2,10 +2,13 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 import requests
+import sqlite3
 import os
 import uvicorn
 import logging
 import yaml_manager
+
+HA_DB_PATH = "/config/home-assistant_v2.db"
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("RecorderExpert")
@@ -45,18 +48,19 @@ async def get_data(mode: str = 'recorder'):
     try:
         r = requests.get(f"{BASE_URL}/states", headers=HEADERS, timeout=10)
         states = r.json()
-        known = yaml_manager.get_known_entities(mode)
-        
+        known = yaml_manager.get_known_data(mode)  # None gdy brak pliku snapshotu
+
         entities = []
         for s in states:
             uom = s.get('attributes', {}).get('unit_of_measurement')
-            
+
             if mode == 'logbook' and uom:
                 continue
-                
+
             eid = s['entity_id']
-            is_new = (eid not in known) if known is not None else False
-            
+            # is_new tylko gdy snapshot istnieje i encja go nie ma
+            is_new = (eid not in known['entities']) if known is not None else False
+
             entities.append({
                 'entity_id': eid,
                 'name': s.get('attributes', {}).get('friendly_name') or eid,
@@ -65,11 +69,58 @@ async def get_data(mode: str = 'recorder'):
                 'state': s.get('state'),
                 'is_new': is_new
             })
-            
-        return {"entities": entities, "config": yaml_manager.load_yaml_config(mode)}
+
+        config = yaml_manager.load_yaml_config(mode)
+        recorder_config = yaml_manager.load_yaml_config('recorder') if mode == 'logbook' else None
+        # Przekaż znane event types do frontendu (None = brak snapshotu = brak NEW)
+        known_event_types = list(known['event_types']) if known is not None else None
+
+        return {
+            "entities": entities,
+            "config": config,
+            "recorder_config": recorder_config,
+            "known_event_types": known_event_types
+        }
     except Exception as e:
         logger.error(f"HA API Error: {e}")
         return {"error": str(e)}
+
+@app.get("/api/event-types")
+async def get_event_types():
+    """Zwraca listę dostępnych event types przez HA Supervisor REST API."""
+    available = []
+
+    # --- DEBUG: sprawdź czy token jest dostępny ---
+    token_present = bool(TOKEN)
+    token_preview = (TOKEN[:8] + "...") if TOKEN and len(TOKEN) > 8 else repr(TOKEN)
+    logger.info(f"[event-types] DEBUG: SUPERVISOR_TOKEN present={token_present}, preview={token_preview}")
+    logger.info(f"[event-types] DEBUG: BASE_URL={BASE_URL}")
+    logger.info(f"[event-types] DEBUG: Wywołuję GET {BASE_URL}/events")
+
+    try:
+        r = requests.get(f"{BASE_URL}/events", headers=HEADERS, timeout=10)
+        logger.info(f"[event-types] DEBUG: HTTP status={r.status_code}")
+        logger.info(f"[event-types] DEBUG: Response (pierwsze 500 znaków): {r.text[:500]}")
+
+        if r.status_code == 200:
+            events_data = r.json()
+            logger.info(f"[event-types] DEBUG: Liczba obiektów w odpowiedzi: {len(events_data)}")
+            if events_data:
+                logger.info(f"[event-types] DEBUG: Przykładowy obiekt: {events_data[0]}")
+            available = sorted([e['event'] for e in events_data if e.get('event') and e['event'] != '*'])
+            logger.info(f"[event-types] OK: Pobrano {len(available)} typów. Przykłady: {available[:5]}")
+        else:
+            logger.error(f"[event-types] ERROR: HTTP {r.status_code}: {r.text[:300]}")
+    except Exception as e:
+        logger.error(f"[event-types] EXCEPTION: {type(e).__name__}: {e}")
+
+    # Aktualnie skonfigurowane wykluczenia z YAML recordera
+    recorder_cfg = yaml_manager.load_yaml_config('recorder')
+    configured = recorder_cfg.get('exc_et', [])
+
+    logger.info(f"[event-types] Zwracam available={len(available)}, configured={len(configured)}")
+    return {"available": available, "configured": configured}
+
 
 @app.post("/api/preview")
 async def preview_yaml(request: Request):
@@ -83,18 +134,23 @@ async def save_config(request: Request):
     payload = await request.json()
     force_create = payload.get('force_create', False)
     mode = payload.get('mode', 'recorder')
-    
+
     if not force_create and not yaml_manager.check_files_exist(mode):
         return {
-            "status": "confirm", 
+            "status": "confirm",
             "message": f"YAML files for {mode.upper()} mode do not exist in /config/recorder_expert. Create them?"
         }
 
     try:
         if yaml_manager.check_files_exist(mode):
             yaml_manager.create_backup(mode)
-            
-        yaml_manager.save_yaml_files(payload.get('config', {}), payload.get('known_entities', []), mode)
+
+        yaml_manager.save_yaml_files(
+            payload.get('config', {}),
+            payload.get('known_entities', []),
+            payload.get('known_event_types', []),  # lista wszystkich dostępnych ET w momencie zapisu
+            mode
+        )
         return {"status": "success"}
     except Exception as e:
         return {"status": "error", "message": str(e)}

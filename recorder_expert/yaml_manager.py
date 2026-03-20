@@ -19,11 +19,28 @@ ryaml.default_flow_style = False
 def get_paths(mode):
     return os.path.join(BASE_DIR, f"{mode}_include_entities.yaml"), os.path.join(BASE_DIR, f"{mode}_exclude_entities.yaml")
 
-def get_snapshot_path(mode):
-    return os.path.join(BASE_DIR, f".{mode}_known.json")
+KNOWN_DATA_PATH = os.path.join(BASE_DIR, "known_data.json")
+
+def _load_known_data():
+    """Wczytuje centralny plik snapshotu. Zwraca None gdy plik nie istnieje."""
+    if not os.path.exists(KNOWN_DATA_PATH):
+        return None
+    try:
+        with open(KNOWN_DATA_PATH, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+def _save_known_data(data):
+    """Zapisuje centralny plik snapshotu."""
+    try:
+        with open(KNOWN_DATA_PATH, 'w', encoding='utf-8') as f:
+            json.dump(data, f)
+    except Exception: pass
 
 def load_yaml_config(mode):
-    db = {'inc_e': [], 'exc_e': [], 'inc_g': [], 'exc_g': [], 'inc_d': [], 'exc_d': []}
+    # [event_types] dodano klucz exc_et — tylko recorder obsługuje event_types w exclude
+    db = {'inc_e': [], 'exc_e': [], 'inc_g': [], 'exc_g': [], 'inc_d': [], 'exc_d': [], 'exc_et': []}
     inc_file, exc_file = get_paths(mode)
     
     for f, m in [(inc_file, 'inc'), (exc_file, 'exc')]:
@@ -37,6 +54,9 @@ def load_yaml_config(mode):
                     db[f'{m}_e'] = inner.get('entities', []) or []
                     db[f'{m}_g'] = inner.get('entity_globs', []) or []
                     db[f'{m}_d'] = inner.get('domains', []) or []
+                    # [event_types] odczyt event_types tylko z pliku exclude i tylko dla recorder
+                    if m == 'exc' and mode == 'recorder':
+                        db['exc_et'] = inner.get('event_types', []) or []
             except Exception: pass
     return db
 
@@ -53,6 +73,9 @@ def generate_yaml_dicts(config):
     if exc_d: exc_data['domains'] = exc_d
     if exc_g: exc_data['entity_globs'] = exc_g
     if exc_e: exc_data['entities'] = exc_e
+    # [event_types] zapis event_types do exclude — HA Core obsługuje tylko recorder.exclude.event_types
+    exc_et = clean(config.get('exc_et', []))
+    if exc_et: exc_data['event_types'] = exc_et
 
     return inc_data, exc_data
 
@@ -107,36 +130,41 @@ def restore_backup(mode, backup_id):
         except Exception: pass
     return False
 
-def save_yaml_files(config, known_entities_ids, mode):
+def save_yaml_files(config, known_entities_ids, event_types_ids, mode):
     inc_data, exc_data = generate_yaml_dicts(config)
     os.makedirs(BASE_DIR, exist_ok=True)
     inc_file, exc_file = get_paths(mode)
-    
+
     Path(inc_file).touch(exist_ok=True)
     Path(exc_file).touch(exist_ok=True)
-    
-    with open(inc_file, "w", encoding='utf-8') as f: 
+
+    with open(inc_file, "w", encoding='utf-8') as f:
         if inc_data: ryaml.dump(inc_data, f)
         else: f.write("")
-            
-    with open(exc_file, "w", encoding='utf-8') as f: 
+
+    with open(exc_file, "w", encoding='utf-8') as f:
         if exc_data: ryaml.dump(exc_data, f)
         else: f.write("")
-            
-    if known_entities_ids is not None:
-        try:
-            with open(get_snapshot_path(mode), 'w', encoding='utf-8') as f:
-                json.dump(known_entities_ids, f)
-        except Exception: pass
 
-def get_known_entities(mode):
-    snap_path = get_snapshot_path(mode)
-    if os.path.exists(snap_path):
-        try:
-            with open(snap_path, 'r', encoding='utf-8') as f:
-                return set(json.load(f))
-        except Exception: pass
-    return None
+    # Zapisz snapshot do centralnego known_data.json
+    if known_entities_ids is not None:
+        data = _load_known_data() or {}
+        data[mode] = {
+            'entities': list(known_entities_ids),
+            'event_types': list(event_types_ids) if event_types_ids is not None else []
+        }
+        _save_known_data(data)
+
+def get_known_data(mode):
+    """Zwraca slownik {entities: set, event_types: set} lub None gdy brak snapshotu."""
+    data = _load_known_data()
+    if data is None or mode not in data:
+        return None
+    mode_data = data[mode]
+    return {
+        'entities': set(mode_data.get('entities', [])),
+        'event_types': set(mode_data.get('event_types', []))
+    }
 
 def check_files_exist(mode):
     inc_file, exc_file = get_paths(mode)
