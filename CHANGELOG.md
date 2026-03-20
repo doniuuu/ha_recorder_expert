@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to Recorder Expert are documented here.
+All notable changes to Recorder Expert are documented here. There is shortened version in recorder_expert/.
 
 ---
 
