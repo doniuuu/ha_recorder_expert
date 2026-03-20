@@ -1,5 +1,6 @@
 name: "Recorder Expert"
 description: "Manage Recorder and Logbook filters"
+url: "https://github.com/doniuuu/ha_recorder_expert"
 version: "1.1.0"
 slug: "recorder_expert"
 init: false
